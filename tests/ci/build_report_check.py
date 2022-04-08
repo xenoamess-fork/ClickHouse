@@ -11,7 +11,7 @@ from env_helper import (
     TEMP_PATH,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    GITHUB_RUN_URL,
 )
 from report import create_build_html_report
 from s3_helper import S3Helper
@@ -120,6 +120,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     build_check_name = sys.argv[1]
+    reports_length = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     gh = Github(get_best_robot_token())
     pr_info = PRInfo()
@@ -138,7 +139,7 @@ if __name__ == "__main__":
                 logging.info("Found build report json %s", f)
                 build_name = get_build_name_from_file_name(f)
                 if build_name in reports_order:
-                    with open(os.path.join(root, f), "r") as file_handler:
+                    with open(os.path.join(root, f), "rb") as file_handler:
                         build_report = json.load(file_handler)
                         build_reports_map[build_name] = build_report
                 else:
@@ -147,6 +148,18 @@ if __name__ == "__main__":
                         f,
                         build_name,
                     )
+
+    reports_length = reports_length or len(reports_order)
+    some_builds_are_missing = len(build_reports_map) < reports_length
+
+    if some_builds_are_missing:
+        logging.info(
+            "Expected to get %s build results, got %s",
+            len(reports_order),
+            len(build_reports_map),
+        )
+    else:
+        logging.info("Got exactly %s builds", len(build_reports_map))
 
     build_reports = [
         build_reports_map[build_name]
@@ -177,12 +190,10 @@ if __name__ == "__main__":
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"
     if pr_info.number != 0:
-        branch_name = "PR #{}".format(pr_info.number)
+        branch_name = f"PR #{pr_info.number}"
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_info.number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{pr_info.sha}"
-    task_url = (
-        f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID or '0'}"
-    )
+    task_url = GITHUB_RUN_URL
     report = create_build_html_report(
         build_check_name,
         build_results,
@@ -195,8 +206,8 @@ if __name__ == "__main__":
     )
 
     report_path = os.path.join(temp_path, "report.html")
-    with open(report_path, "w") as f:
-        f.write(report)
+    with open(report_path, "w", encoding="utf-8") as fd:
+        fd.write(report)
 
     logging.info("Going to upload prepared report")
     context_name_for_path = build_check_name.lower().replace(" ", "_")
@@ -221,12 +232,16 @@ if __name__ == "__main__":
         if build_result.status == "success":
             ok_builds += 1
 
-    if ok_builds == 0:
+    if ok_builds == 0 or some_builds_are_missing:
         summary_status = "error"
 
-    description = "{}/{} builds are OK".format(ok_builds, total_builds)
+    addition = ""
+    if some_builds_are_missing:
+        addition = f"({len(build_reports_map)} < {reports_length})"
 
-    print("::notice ::Report url: {}".format(url))
+    description = f"{ok_builds}/{total_builds} builds are OK {addition}"
+
+    print(f"::notice ::Report url: {url}")
 
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(
@@ -235,3 +250,6 @@ if __name__ == "__main__":
         state=summary_status,
         target_url=url,
     )
+
+    if summary_status == "error":
+        sys.exit(1)
