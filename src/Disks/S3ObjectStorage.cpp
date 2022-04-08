@@ -1,6 +1,8 @@
 #include <Disks/S3ObjectStorage.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 
+#include <Common/FileCache.h>
+
 namespace DB
 {
 
@@ -64,6 +66,29 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+   ReadSettings disk_read_settings{settings};
+   if (cache)
+   {
+       if (IFileCache::isReadOnly())
+           disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+
+       disk_read_settings.remote_fs_cache = cache;
+   }
+
+   auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
+       client, bucket, metadata,
+       settings->s3_max_single_read_retries, disk_read_settings);
+
+   if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+   {
+       auto reader = getThreadPoolReader();
+       return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
+   }
+   else
+   {
+       auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+       return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+   }
 
 }
 

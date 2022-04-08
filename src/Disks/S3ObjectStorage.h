@@ -42,6 +42,7 @@ private:
 
     std::string bucket;
     std::shared_ptr<Aws::S3::S3Client> client;
+    FileCachePtr cache;
 };
 
 }
