@@ -11,6 +11,9 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Common/ThreadPool.h>
+#include <Common/FileCache.h>
 
 
 namespace DB
@@ -19,8 +22,25 @@ namespace DB
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
-
 using ObjectAttributes = std::map<std::string, std::string>;
+
+/// Path to blob with it's size
+struct BlobPathWithSize
+{
+    std::string relative_path;
+    uint64_t bytes_size;
+
+    BlobPathWithSize() = default;
+    BlobPathWithSize(const BlobPathWithSize & other) = default;
+
+    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
+        : relative_path(relative_path_)
+        , bytes_size(bytes_size_)
+    {}
+};
+
+/// List of blobs with their sizes
+using BlobsPathToSize = std::vector<BlobPathWithSize>;
 
 struct ObjectMetadata
 {
@@ -43,10 +63,10 @@ public:
 
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
-    /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
-        const std::string & path,
-        const ReadSettings & settings = ReadSettings{},
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
+        const std::string & common_path_prefix,
+        const BlobsPathToSize & blobs_to_read,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -56,7 +76,7 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {}) = 0;
+        const WriteSettings & write_settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeObject(const std::string & path) = 0;
@@ -67,6 +87,15 @@ public:
     virtual void removeObjectIfExists(const std::string & path) = 0;
 
     virtual ~IObjectStorage() = default;
+
+    std::string getCacheBasePath() const;
+
+    static AsynchronousReaderPtr getThreadPoolReader();
+
+    static ThreadPool & getThreadPoolWriter();
+
+protected:
+    FileCachePtr cache;
 };
 
 }

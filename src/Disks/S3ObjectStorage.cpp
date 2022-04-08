@@ -1,7 +1,18 @@
 #include <Disks/S3ObjectStorage.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/RemoteDisksCommon.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/WriteBufferFromS3.h>
+#include <IO/SeekAvoidingReadBuffer.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <Common/FileCache.h>
+#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -60,13 +71,15 @@ bool S3ObjectStorage::exists(const std::string & path) const
     return true;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
-    const std::string & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
+    const std::string & common_path_prefix,
+    const BlobsPathToSize & blobs_to_read,
+    const ReadSettings & read_settings,
+    std::optional<size_t>,
+    std::optional<size_t>) const
 {
-   ReadSettings disk_read_settings{settings};
+
+   ReadSettings disk_read_settings{read_settings};
    if (cache)
    {
        if (IFileCache::isReadOnly())
@@ -76,8 +89,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
    }
 
    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-       client, bucket, metadata,
-       settings->s3_max_single_read_retries, disk_read_settings);
+       client, bucket, common_path_prefix, blobs_to_read,
+       s3_settings.s3_max_single_read_retries, disk_read_settings);
 
    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
    {
@@ -87,10 +100,36 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
    else
    {
        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
-       return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+       return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), s3_settings.min_bytes_for_seek);
    }
+}
+
+std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject(
+    const std::string & path,
+    std::optional<ObjectAttributes> attributes,
+    size_t buf_size,
+    WriteMode mode,
+    const WriteSettings & write_settings)
+{
+    bool cache_on_write = cache
+        && fs::path(path).extension() != ".tmp"
+        && write_settings.enable_filesystem_cache_on_write_operations
+        && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
+
+    auto s3_buffer = std::make_unique<WriteBufferFromS3>(
+        client,
+        bucket,
+        path,
+        s3_settings.s3_min_upload_part_size,
+        s3_settings.s3_upload_part_size_multiply_factor,
+        s3_settings.s3_upload_part_size_multiply_parts_count_threshold,
+        s3_settings.s3_max_single_part_upload_size,
+        attributes ? *attributes : {},
+        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()),
+        blob_name, cache_on_write ? cache : nullptr);
 
 }
+
 
 
 }
