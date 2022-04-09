@@ -49,19 +49,22 @@ struct ObjectMetadata
     std::optional<ObjectAttributes> attribtues;
 };
 
-enum class WriteMode
-{
-    Rewrite,
-    Append
-};
+using FinalizeCallback = std::function<void(size_t bytes_count)>;
 
 class IObjectStorage
 {
 public:
     virtual bool exists(const std::string & path) const = 0;
-    virtual void listPrefix(const std::string & path, std::vector<std::string> & children) const = 0;
+
+    virtual void listPrefix(const std::string & path, BlobsPathToSize & children) const = 0;
 
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const BlobPathWithSize & blobs_to_read,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,
@@ -74,8 +77,8 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const std::string & path,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & write_settings = {}) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
@@ -85,6 +88,14 @@ public:
 
     /// Remove file if it exists.
     virtual void removeObjectIfExists(const std::string & path) = 0;
+
+    virtual void removeObjectsIfExist(const std::vector<std::string> & paths) = 0;
+
+    virtual void copyObject(const std::string & object_from, const std::string & object_to) = 0;
+
+    virtual void applyNewConfiguration(
+        const Poco::Util::AbstractConfiguration & config, ContextPtr context,
+        const String & config_prefix, const DisksMap & disks_map) = 0;
 
     virtual ~IObjectStorage() = default;
 

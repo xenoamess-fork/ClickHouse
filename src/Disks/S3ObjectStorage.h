@@ -14,8 +14,31 @@
 namespace DB
 {
 
+
 struct S3ObjectStorageSettings
 {
+
+    S3ObjectStorageSettings() = default;
+
+    S3ObjectStorageSettings(
+        uint64_t s3_max_single_read_retries_,
+        uint64_t s3_min_upload_part_size_,
+        uint64_t s3_upload_part_size_multiply_factor_,
+        uint64_t s3_upload_part_size_multiply_parts_count_threshold_,
+        uint64_t s3_max_single_part_upload_size_,
+        uint64_t min_bytes_for_seek_,
+        int32_t list_object_keys_size_,
+        int32_t objects_chunk_size_to_delete_)
+        : s3_max_single_read_retries(s3_max_single_read_retries_)
+        , s3_min_upload_part_size(s3_min_upload_part_size_)
+        , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
+        , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
+        , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
+        , min_bytes_for_seek(min_bytes_for_seek_)
+        , list_object_keys_size(list_object_keys_size_)
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+    {}
+
     uint64_t s3_max_single_read_retries;
     uint64_t s3_min_upload_part_size;
     uint64_t s3_upload_part_size_multiply_factor;
@@ -32,6 +55,12 @@ class S3ObjectStorage : public IObjectStorage
 public:
     bool exists(const std::string & path) const override;
 
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const BlobPathWithSize & blobs_to_read,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
+
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,
         const BlobsPathToSize & blobs_to_read,
@@ -43,17 +72,44 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const std::string & path,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & write_settings = {}) override;
+
+    void listPrefix(const std::string & path, BlobsPathToSize & children) const override;
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    void removeObject(const std::string & path) override;
+
+    void removeObjects(const std::vector<std::string> & paths) override;
+
+    void removeObjectIfExists(const std::string & path) override;
+
+    void removeObjectsIfExist(const std::vector<std::string> & paths) override;
+
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    void copyObject(const std::string & object_from, const std::string & object_to) override;
+
+    void applyNewConfiguration(
+        const Poco::Util::AbstractConfiguration & config, ContextPtr context,
+        const String & config_prefix, const DisksMap & disks_map) override;
 
 private:
 
-    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & key) const;
+    void copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
+
+    void copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<ObjectAttributes> metadata = std::nullopt) const;
+
+    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
     std::string bucket;
+
     std::shared_ptr<Aws::S3::S3Client> client;
-    S3ObjectStorageSettings s3_settings;
+    MultiVersion<S3ObjectStorageSettings> s3_settings;
 };
 
 }

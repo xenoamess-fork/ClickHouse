@@ -10,6 +10,7 @@
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <Disks/IObjectStorage.h>
 
 #include <memory>
 #include <mutex>

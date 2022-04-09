@@ -39,7 +39,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 
     auto cache = settings.remote_fs_cache;
     bool with_cache = cache && settings.enable_filesystem_cache;
-    auto remote_path = fs::path(metadata.remote_fs_root_path) / path;
+    auto remote_path = fs::path(common_path_prefix) / path;
 
     auto remote_file_reader_creator = [=, this]()
     {

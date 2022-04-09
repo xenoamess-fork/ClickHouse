@@ -18,6 +18,7 @@
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
 #include <Common/FileCache_fwd.h>
+#include <Disks/S3ObjectStorage.h>
 
 
 namespace DB
