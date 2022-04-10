@@ -87,7 +87,7 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         size_t range_step_,

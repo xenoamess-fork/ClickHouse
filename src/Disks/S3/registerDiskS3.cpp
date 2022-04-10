@@ -168,7 +168,6 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
 
 }
 
-
 void registerDiskS3(DiskFactory & factory)
 {
     auto creator = [](const String & name,

@@ -84,7 +84,7 @@ class StorageS3Source::DisclosedGlobIterator::Impl
 {
 
 public:
-    Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+    Impl(const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
         : client(client_), globbed_uri(globbed_uri_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -171,7 +171,7 @@ private:
     bool is_finished{false};
 };
 
-StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
 
 String StorageS3Source::DisclosedGlobIterator::next()
@@ -230,7 +230,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const Aws::S3::S3Client> & client_,
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     const size_t download_thread_num_)
@@ -365,7 +365,7 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
+static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
     Aws::S3::Model::ListObjectsV2Request request;
@@ -408,7 +408,7 @@ public:
         ContextPtr context,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method,
-        const std::shared_ptr<Aws::S3::S3Client> & client,
+        const std::shared_ptr<const Aws::S3::S3Client> & client,
         const String & bucket,
         const String & key,
         size_t min_upload_part_size,
@@ -478,7 +478,7 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method_,
-        const std::shared_ptr<Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket_,
         const String & key_,
         size_t min_upload_part_size_,
@@ -531,7 +531,7 @@ private:
     ContextPtr context;
     const CompressionMethod compression_method;
 
-    std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<const Aws::S3::S3Client> client;
     const String bucket;
     const String key;
     size_t min_upload_part_size;

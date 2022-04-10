@@ -54,7 +54,11 @@ class S3ObjectStorage : public IObjectStorage
 {
 public:
     S3ObjectStorage(
-    )
+        std::unique_ptr<Aws::S3::S3Client> client_,
+        std::unique_ptr<S3ObjectStorageSettings> s3_settings_)
+        : client(std::move(client_))
+        , s3_settings(std::move(s3_settings_))
+    {}
         
     bool exists(const std::string & path) const override;
 

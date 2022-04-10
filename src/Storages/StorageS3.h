@@ -36,7 +36,7 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
+            DisclosedGlobIterator(const Aws::S3::S3Client &, const S3::URI &);
             String next();
         private:
             class Impl;
@@ -71,7 +71,7 @@ public:
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
         String compression_hint_,
-        const std::shared_ptr<Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         size_t download_thread_num);
@@ -91,7 +91,7 @@ private:
     UInt64 max_block_size;
     UInt64 max_single_read_retries;
     String compression_hint;
-    std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -188,7 +188,7 @@ private:
         const String access_key_id;
         const String secret_access_key;
         const UInt64 max_connections;
-        std::shared_ptr<Aws::S3::S3Client> client;
+        std::shared_ptr<const Aws::S3::S3Client> client;
         S3AuthSettings auth_settings;
     };
 

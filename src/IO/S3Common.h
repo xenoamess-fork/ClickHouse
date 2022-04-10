@@ -31,7 +31,7 @@ public:
 
     static ClientFactory & instance();
 
-    std::shared_ptr<Aws::S3::S3Client> create(
+    std::unique_ptr<Aws::S3::S3Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
