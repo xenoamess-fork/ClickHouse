@@ -47,7 +47,7 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit WriteBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         size_t minimum_upload_part_size_,
@@ -93,7 +93,7 @@ private:
     String bucket;
     String key;
     std::optional<std::map<String, String>> object_metadata;
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     size_t upload_part_size;
     const size_t upload_part_size_multiply_factor;
     const size_t upload_part_size_multiply_threshold;

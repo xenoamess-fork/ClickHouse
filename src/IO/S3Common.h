@@ -75,7 +75,7 @@ struct URI
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
-size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error = true);
+size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error = true);
 
 }
 

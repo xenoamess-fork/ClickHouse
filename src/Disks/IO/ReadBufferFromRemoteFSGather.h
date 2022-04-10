@@ -101,7 +101,7 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
@@ -117,7 +117,7 @@ public:
     SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     UInt64 max_single_read_retries;
 };

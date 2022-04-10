@@ -61,11 +61,12 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
 {
+    auto client_ptr = client.get();
     Aws::S3::Model::HeadObjectRequest request;
     request.SetBucket(bucket_from);
     request.SetKey(key);
 
-    return client->HeadObject(request);
+    return client_ptr->HeadObject(request);
 }
 
 bool S3ObjectStorage::exists(const std::string & path) const
@@ -100,7 +101,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
    auto settings_ptr = s3_settings.get();
    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-       client, bucket, common_path_prefix, blobs_to_read,
+       client.get(), bucket, common_path_prefix, blobs_to_read,
        settings_ptr->s3_max_single_read_retries, disk_read_settings);
 
    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
@@ -129,7 +130,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject(
 
     auto settings_ptr = s3_settings.get();
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
-        client,
+        client.get(),
         bucket,
         path,
         settings_ptr->s3_min_upload_part_size,
@@ -146,6 +147,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject(
 void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
 {
     auto settings_ptr = s3_settings.get();
+    auto client_ptr = client.get();
 
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
@@ -155,7 +157,7 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
-        outcome = client->ListObjectsV2(request);
+        outcome = client_ptr->ListObjectsV2(request);
         throwIfError(outcome);
 
         auto result = outcome.GetResult();
@@ -172,6 +174,7 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
 
 void S3ObjectStorage::removeObject(const std::string & path)
 {
+    auto client_ptr = client.get();
     Aws::S3::Model::ObjectIdentifier obj;
     obj.SetKey(path);
 
@@ -181,13 +184,14 @@ void S3ObjectStorage::removeObject(const std::string & path)
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
-    auto outcome = client->DeleteObjects(request);
+    auto outcome = client_ptr->DeleteObjects(request);
 
     throwIfError(outcome);
 }
 
 void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
 {
+    auto client_ptr = client.get();
     std::vector<Aws::S3::Model::ObjectIdentifier> keys;
     keys.reserve(paths.size());
     for (const auto & path : paths)
@@ -203,7 +207,7 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
-    auto outcome = client->DeleteObjects(request);
+    auto outcome = client_ptr->DeleteObjects(request);
 
     throwIfError(outcome);
 
@@ -211,6 +215,7 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
 
 void S3ObjectStorage::removeObjectIfExists(const std::string & path)
 {
+    auto client_ptr = client.get();
     Aws::S3::Model::ObjectIdentifier obj;
     obj.SetKey(path);
 
@@ -220,11 +225,13 @@ void S3ObjectStorage::removeObjectIfExists(const std::string & path)
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
-    client->DeleteObjects(request);
+    client_ptr->DeleteObjects(request);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
 {
+    auto client_ptr = client.get();
+
     std::vector<Aws::S3::Model::ObjectIdentifier> keys;
     keys.reserve(paths.size());
     for (const auto & path : paths)
@@ -240,7 +247,7 @@ void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & path
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
-    auto outcome = client->DeleteObjects(request);
+    auto outcome = client_ptr->DeleteObjects(request);
 
     throwIfError(outcome);
 }
@@ -264,6 +271,7 @@ void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & s
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
 {
+    auto client_ptr = client.get();
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -274,7 +282,7 @@ void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & s
         request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
     }
 
-    auto outcome = client->CopyObject(request);
+    auto outcome = client_ptr->CopyObject(request);
 
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
@@ -293,6 +301,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
         head = requestObjectHeadData(src_bucket, src_key).GetResult();
 
     auto settings_ptr = s3_settings.get();
+    auto client_ptr = client.get();
     size_t size = head->GetContentLength();
 
     String multipart_upload_id;
@@ -304,7 +313,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
         if (metadata)
             request.SetMetadata(*metadata);
 
-        auto outcome = client->CreateMultipartUpload(request);
+        auto outcome = client_ptr->CreateMultipartUpload(request);
 
         throwIfError(outcome);
 
@@ -324,14 +333,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
         part_request.SetPartNumber(part_number);
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
-        auto outcome = client->UploadPartCopy(part_request);
+        auto outcome = client_ptr->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
         {
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dst_bucket);
             abort_request.SetKey(dst_key);
             abort_request.SetUploadId(multipart_upload_id);
-            client->AbortMultipartUpload(abort_request);
+            client_ptr->AbortMultipartUpload(abort_request);
             // In error case we throw exception later with first error from UploadPartCopy
         }
         throwIfError(outcome);
@@ -355,7 +364,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 
         req.SetMultipartUpload(multipart_upload);
 
-        auto outcome = client->CompleteMultipartUpload(req);
+        auto outcome = client_ptr->CompleteMultipartUpload(req);
 
         throwIfError(outcome);
     }
@@ -370,59 +379,14 @@ void S3ObjectStorage::copyObject(const std::string & object_from, const std::str
         copyObjectImpl(bucket, object_from, bucket, object_to);
 }
 
-void S3ObjectStorage::applyNewConfiguration(
-    const Poco::Util::AbstractConfiguration & config, ContextPtr context,
-    const String & config_prefix, const DisksMap & /* disks_map */)
+void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
 {
-    auto new_settings = std::make_unique<S3ObjectStorageSettings>(
-        config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
-        config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
-        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor),
-        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold),
-        config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
-        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000)
-    );
-
-    s3_settings.set(std::move(new_settings));
-
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects);
-
-    S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-    if (uri.key.back() != '/')
-        throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
-
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
-    client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
-    client_configuration.endpointOverride = uri.endpoint;
-
-    auto proxy_config = getProxyConfiguration(config_prefix, config);
-    if (proxy_config)
-    {
-        client_configuration.perRequestConfiguration
-            = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
-        client_configuration.error_report
-            = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
-    }
-
-    client_configuration.retryStrategy
-        = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
-
-    auto new_client S3::ClientFactory::instance().create(
-        client_configuration,
-        uri.is_virtual_hosted_style,
-        config.getString(config_prefix + ".access_key_id", ""),
-        config.getString(config_prefix + ".secret_access_key", ""),
-        config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
-        {},
-        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
-
+    s3_settings.set(std::move(s3_settings_));
 }
 
+void S3ObjectStorage::setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_)
+{
+    client.set(std::move(client_));
+}
 
 }

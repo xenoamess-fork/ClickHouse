@@ -93,10 +93,6 @@ public:
 
     virtual void copyObject(const std::string & object_from, const std::string & object_to) = 0;
 
-    virtual void applyNewConfiguration(
-        const Poco::Util::AbstractConfiguration & config, ContextPtr context,
-        const String & config_prefix, const DisksMap & disks_map) = 0;
-
     virtual ~IObjectStorage() = default;
 
     std::string getCacheBasePath() const;

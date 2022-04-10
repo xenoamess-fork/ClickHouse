@@ -28,7 +28,7 @@ namespace DB
 class ReadBufferFromS3 : public SeekableReadBufferWithSize
 {
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
     UInt64 max_single_read_retries;
@@ -46,7 +46,7 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         UInt64 max_single_read_retries_,
@@ -114,7 +114,7 @@ public:
     std::optional<size_t> getTotalSize() override;
 
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
     ReadSettings read_settings;

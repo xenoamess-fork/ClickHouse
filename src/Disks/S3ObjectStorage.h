@@ -53,6 +53,9 @@ struct S3ObjectStorageSettings
 class S3ObjectStorage : public IObjectStorage
 {
 public:
+    S3ObjectStorage(
+    )
+        
     bool exists(const std::string & path) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -90,9 +93,9 @@ public:
 
     void copyObject(const std::string & object_from, const std::string & object_to) override;
 
-    void applyNewConfiguration(
-        const Poco::Util::AbstractConfiguration & config, ContextPtr context,
-        const String & config_prefix, const DisksMap & disks_map) override;
+    void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
+
+    void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
 
 private:
 
@@ -108,7 +111,7 @@ private:
 
     std::string bucket;
 
-    std::shared_ptr<Aws::S3::S3Client> client;
+    MultiVersion<Aws::S3::S3Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
 };
 

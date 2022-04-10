@@ -152,6 +152,7 @@ public:
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
+
     static ThreadPool & getThreadPoolWriter();
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
