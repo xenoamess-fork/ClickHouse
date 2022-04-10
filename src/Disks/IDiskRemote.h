@@ -21,24 +21,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/// Helper class to collect paths into chunks of maximum size.
-/// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
-class RemoteFSPathKeeper
-{
-public:
-    explicit RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
-
-    virtual ~RemoteFSPathKeeper() = default;
-
-    virtual void addPath(const String & path) = 0;
-
-protected:
-    size_t chunk_limit;
-};
-
-using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
-
-
 class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
 
@@ -147,9 +129,7 @@ public:
 
     bool checkUniqueId(const String & id) const override = 0;
 
-    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
-
-    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
+    virtual void removeFromRemoteFS(const std::vector<String> & paths) = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
@@ -173,9 +153,9 @@ protected:
     FileCachePtr cache;
 
 private:
-    void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
-    void removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    void removeMetadataRecursive(const String & path, std::vector<String> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 
