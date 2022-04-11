@@ -1,4 +1,4 @@
-#include "DiskS3.h"
+#include <Disks/S3/DiskS3.h>
 
 #if USE_AWS_S3
 #include "Disks/DiskFactory.h"
@@ -112,12 +112,12 @@ DiskS3::DiskS3(
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
-    SettingsPtr settings_,
-    GetDiskSettings settings_getter_)
+    std::unique_ptr<Aws::S3::S3Client> client_,
+    std::unique_ptr<DiskS3Settings> settings_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
+    , current_client(std::move(client_))
     , current_settings(std::move(settings_))
-    , settings_getter(settings_getter_)
     , context(context_)
 {
 }
@@ -125,6 +125,7 @@ DiskS3::DiskS3(
 void DiskS3::removeFromRemoteFS(const std::vector<String> & paths)
 {
     auto settings = current_settings.get();
+    auto client = current_client.get();
 
     size_t chunk_size_limit = settings->objects_chunk_size_to_delete;
     size_t current_position = 0;
@@ -149,7 +150,7 @@ void DiskS3::removeFromRemoteFS(const std::vector<String> & paths)
         Aws::S3::Model::DeleteObjectsRequest request;
         request.SetBucket(bucket);
         request.SetDelete(delkeys);
-        auto outcome = settings->client->DeleteObjects(request);
+        auto outcome = client->DeleteObjects(request);
         logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
     }
 }
@@ -196,7 +197,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     }
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        settings->client, bucket, metadata.remote_fs_root_path, metadata.remote_fs_objects,
+        current_client.get(), bucket, metadata.remote_fs_root_path, metadata.remote_fs_objects,
         settings->s3_max_single_read_retries, disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
@@ -237,7 +238,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
-        settings->client,
+        current_client.get(),
         bucket,
         fs::path(remote_fs_root_path) / blob_name,
         settings->s3_min_upload_part_size,
@@ -292,7 +293,7 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
     auto settings = current_settings.get();
     const String key = "operations/r" + revisionToString(revision) + "-" + operation_name;
     WriteBufferFromS3 buffer(
-        settings->client,
+        current_client.get(),
         bucket,
         remote_fs_root_path + key,
         settings->s3_min_upload_part_size,
@@ -310,7 +311,7 @@ void DiskS3::startup()
     auto settings = current_settings.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    settings->client->EnableRequestProcessing();
+    current_client.get()->EnableRequestProcessing();
 
     if (!settings->send_metadata)
         return;
@@ -357,7 +358,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
 
     auto settings = current_settings.get();
     ReadBufferFromS3 buffer(
-        settings->client,
+        current_client.get(),
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries,
@@ -373,7 +374,7 @@ void DiskS3::saveSchemaVersion(const int & version)
     auto settings = current_settings.get();
 
     WriteBufferFromS3 buffer(
-        settings->client,
+        current_client.get(),
         bucket,
         remote_fs_root_path + SCHEMA_VERSION_OBJECT,
         settings->s3_min_upload_part_size,
@@ -483,7 +484,7 @@ bool DiskS3::checkObjectExists(const String & source_bucket, const String & pref
     request.SetPrefix(prefix);
     request.SetMaxKeys(1);
 
-    auto outcome = settings->client->ListObjectsV2(request);
+    auto outcome = current_client.get()->ListObjectsV2(request);
     throwIfError(outcome);
 
     return !outcome.GetResult().GetContents().empty();
@@ -498,7 +499,7 @@ bool DiskS3::checkUniqueId(const String & id) const
     request.SetBucket(bucket);
     request.SetPrefix(id);
 
-    auto outcome = settings->client->ListObjectsV2(request);
+    auto outcome = current_client.get()->ListObjectsV2(request);
     throwIfError(outcome);
 
     Aws::Vector<Aws::S3::Model::Object> object_list = outcome.GetResult().GetContents();
@@ -511,12 +512,11 @@ bool DiskS3::checkUniqueId(const String & id) const
 
 Aws::S3::Model::HeadObjectResult DiskS3::headObject(const String & source_bucket, const String & key) const
 {
-    auto settings = current_settings.get();
     Aws::S3::Model::HeadObjectRequest request;
     request.SetBucket(source_bucket);
     request.SetKey(key);
 
-    auto outcome = settings->client->HeadObject(request);
+    auto outcome = current_client.get()->HeadObject(request);
     throwIfError(outcome);
 
     return outcome.GetResultWithOwnership();
@@ -525,6 +525,7 @@ Aws::S3::Model::HeadObjectResult DiskS3::headObject(const String & source_bucket
 void DiskS3::listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback) const
 {
     auto settings = current_settings.get();
+    auto client = current_client.get();
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(source_bucket);
     request.SetPrefix(source_path);
@@ -533,7 +534,7 @@ void DiskS3::listObjects(const String & source_bucket, const String & source_pat
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
-        outcome = settings->client->ListObjectsV2(request);
+        outcome = client->ListObjectsV2(request);
         throwIfError(outcome);
 
         bool should_continue = callback(outcome.GetResult());

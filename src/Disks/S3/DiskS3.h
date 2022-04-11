@@ -28,7 +28,6 @@ namespace DB
 struct DiskS3Settings
 {
     DiskS3Settings(
-        const std::shared_ptr<Aws::S3::S3Client> & client_,
         size_t s3_max_single_read_retries_,
         size_t s3_min_upload_part_size_,
         size_t s3_upload_part_size_multiply_factor_,
@@ -40,7 +39,6 @@ struct DiskS3Settings
         int list_object_keys_size_,
         int objects_chunk_size_to_delete_);
 
-    std::shared_ptr<Aws::S3::S3Client> client;
     size_t s3_max_single_read_retries;
     size_t s3_min_upload_part_size;
     size_t s3_upload_part_size_multiply_factor;
@@ -65,9 +63,6 @@ public:
     using ObjectMetadata = std::map<std::string, std::string>;
     using Futures = std::vector<std::future<void>>;
 
-    using SettingsPtr = std::unique_ptr<DiskS3Settings>;
-    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
-
     struct RestoreInformation;
 
     DiskS3(
@@ -77,8 +72,8 @@ public:
         DiskPtr metadata_disk_,
         FileCachePtr cache_,
         ContextPtr context_,
-        SettingsPtr settings_,
-        GetDiskSettings settings_getter_);
+        std::unique_ptr<Aws::S3::S3Client> client_,
+        std::unique_ptr<DiskS3Settings> settings_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -166,6 +161,7 @@ private:
     const String bucket;
 
     MultiVersion<DiskS3Settings> current_settings;
+    MultiVersion<Aws::S3::S3Client> current_client;
     /// Gets disk settings from context.
     GetDiskSettings settings_getter;
 
