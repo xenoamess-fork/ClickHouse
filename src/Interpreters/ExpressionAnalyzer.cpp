@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
@@ -1333,6 +1334,38 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             with_fill = true;
     }
 
+    if (auto interpolate_list = select_query->interpolate())
+    {
+
+        NameSet select;
+        for (const auto & child : select_query->select()->children)
+            select.insert(child->getAliasOrColumnName());
+
+        /// collect columns required for interpolate expressions -
+        /// interpolate expression can use any available column
+        auto find_columns = [&step, &select](IAST * function)
+        {
+            auto f_impl = [&step, &select](IAST * fn, auto fi)
+            {
+                if (auto * ident = fn->as<ASTIdentifier>())
+                {
+                    /// exclude columns from select expression - they are already available
+                    if (select.count(ident->getColumnName()) == 0)
+                        step.addRequiredOutput(ident->getColumnName());
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (const auto & ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            f_impl(function, f_impl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
+    }
+
     if (optimize_read_in_order)
     {
         for (auto & child : select_query->orderBy()->children)
@@ -1723,7 +1756,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // The output of this expression chain is the result of
             // SELECT (before "final projection" i.e. renaming the columns), so
             // we have to mark the expressions that are required in the output,
-            // again. We did it for the previous expression chain ("select w/o
+            // again. We did it for the previous expression chain ("select without
             // window functions") earlier, in appendSelect(). But that chain also
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
