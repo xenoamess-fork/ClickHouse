@@ -162,8 +162,6 @@ private:
 
     MultiVersion<DiskS3Settings> current_settings;
     MultiVersion<Aws::S3::S3Client> current_client;
-    /// Gets disk settings from context.
-    GetDiskSettings settings_getter;
 
     std::atomic<UInt64> revision_counter = 0;
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();

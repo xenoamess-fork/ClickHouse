@@ -36,6 +36,7 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/S3/diskSettings.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
@@ -116,8 +117,8 @@ DiskS3::DiskS3(
     std::unique_ptr<DiskS3Settings> settings_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
-    , current_client(std::move(client_))
     , current_settings(std::move(settings_))
+    , current_client(std::move(client_))
     , context(context_)
 {
 }
@@ -281,11 +282,12 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path, bo
 void DiskS3::shutdown()
 {
     auto settings = current_settings.get();
+    auto client = current_client.get();
     /// This call stops any next retry attempts for ongoing S3 requests.
     /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
-    settings->client->DisableRequestProcessing();
+    const_cast<Aws::S3::S3Client &>(*client).DisableRequestProcessing();
 }
 
 void DiskS3::createFileOperationObject(const String & operation_name, UInt64 revision, const DiskS3::ObjectMetadata & metadata)
@@ -311,7 +313,7 @@ void DiskS3::startup()
     auto settings = current_settings.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    current_client.get()->EnableRequestProcessing();
+    const_cast<Aws::S3::S3Client &>(*current_client.get()).EnableRequestProcessing();
 
     if (!settings->send_metadata)
         return;
@@ -560,6 +562,7 @@ void DiskS3::copyObjectImpl(const String & src_bucket, const String & src_key, c
     std::optional<std::reference_wrapper<const ObjectMetadata>> metadata) const
 {
     auto settings = current_settings.get();
+    auto client = current_client.get();
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -570,7 +573,7 @@ void DiskS3::copyObjectImpl(const String & src_bucket, const String & src_key, c
         request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
     }
 
-    auto outcome = settings->client->CopyObject(request);
+    auto outcome = client->CopyObject(request);
 
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
@@ -589,6 +592,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
         src_bucket, src_key, dst_bucket, dst_key, metadata ? "REPLACE" : "NOT_SET");
 
     auto settings = current_settings.get();
+    auto client = current_client.get();
 
     if (!head)
         head = headObject(src_bucket, src_key);
@@ -604,7 +608,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
         if (metadata)
             request.SetMetadata(*metadata);
 
-        auto outcome = settings->client->CreateMultipartUpload(request);
+        auto outcome = client->CreateMultipartUpload(request);
 
         throwIfError(outcome);
 
@@ -624,14 +628,14 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
         part_request.SetPartNumber(part_number);
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
-        auto outcome = settings->client->UploadPartCopy(part_request);
+        auto outcome = client->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
         {
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dst_bucket);
             abort_request.SetKey(dst_key);
             abort_request.SetUploadId(multipart_upload_id);
-            settings->client->AbortMultipartUpload(abort_request);
+            client->AbortMultipartUpload(abort_request);
             // In error case we throw exception later with first error from UploadPartCopy
         }
         throwIfError(outcome);
@@ -655,7 +659,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
         req.SetMultipartUpload(multipart_upload);
 
-        auto outcome = settings->client->CompleteMultipartUpload(req);
+        auto outcome = client->CompleteMultipartUpload(req);
 
         throwIfError(outcome);
 
@@ -1031,16 +1035,17 @@ void DiskS3::onFreeze(const String & path)
 
 void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
-    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context_);
+    auto new_settings = getSettings(config, "storage_configuration.disks." + name, context_);
+    auto new_client = getClient(config, "storage_configuration.disks." + name, context_);
 
     current_settings.set(std::move(new_settings));
+    current_client.set(std::move(new_client));
 
     if (AsyncExecutor * exec = dynamic_cast<AsyncExecutor*>(&getExecutor()))
         exec->setMaxThreads(current_settings.get()->thread_pool_size);
 }
 
 DiskS3Settings::DiskS3Settings(
-    const std::shared_ptr<Aws::S3::S3Client> & client_,
     size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_upload_part_size_multiply_factor_,
@@ -1051,8 +1056,7 @@ DiskS3Settings::DiskS3Settings(
     int thread_pool_size_,
     int list_object_keys_size_,
     int objects_chunk_size_to_delete_)
-    : client(client_)
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    : s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
     , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
     , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
