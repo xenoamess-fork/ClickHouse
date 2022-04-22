@@ -19,6 +19,7 @@
 #include <Disks/IDiskRemote.h>
 #include <Common/FileCache_fwd.h>
 #include <Disks/S3ObjectStorage.h>
+#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -39,11 +40,8 @@ struct DiskS3Settings
         int list_object_keys_size_,
         int objects_chunk_size_to_delete_);
 
-    size_t s3_max_single_read_retries;
-    size_t s3_min_upload_part_size;
-    size_t s3_upload_part_size_multiply_factor;
-    size_t s3_upload_part_size_multiply_parts_count_threshold;
-    size_t s3_max_single_part_upload_size;
+    std::shared_ptr<Aws::S3::S3Client> client;
+    S3Settings::ReadWriteSettings s3_settings;
     size_t min_bytes_for_seek;
     bool send_metadata;
     int thread_pool_size;

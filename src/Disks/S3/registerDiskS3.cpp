@@ -52,8 +52,8 @@ void checkReadAccess(const String & disk_name, IDisk & disk)
 void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
 
 }
-
 void registerDiskS3(DiskFactory & factory)
+
 {
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
