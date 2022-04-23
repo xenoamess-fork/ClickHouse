@@ -29,18 +29,13 @@ namespace DB
 struct DiskS3Settings
 {
     DiskS3Settings(
-        size_t s3_max_single_read_retries_,
-        size_t s3_min_upload_part_size_,
-        size_t s3_upload_part_size_multiply_factor_,
-        size_t s3_upload_part_size_multiply_parts_count_threshold_,
-        size_t s3_max_single_part_upload_size_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
         int list_object_keys_size_,
         int objects_chunk_size_to_delete_);
 
-    std::shared_ptr<Aws::S3::S3Client> client;
     S3Settings::ReadWriteSettings s3_settings;
     size_t min_bytes_for_seek;
     bool send_metadata;
