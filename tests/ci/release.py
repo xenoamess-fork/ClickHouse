@@ -131,26 +131,26 @@ class Release:
             )
 
     def check_branch(self):
+        branch = self.release_branch
+        self.run(f"git fetch {self.repo} {branch}:{branch}")
         if self.release_type in self.BIG:
             # Commit to spin up the release must belong to a main branch
             branch = "master"
-            output = self.run(f"git branch --contains={self.release_commit} {branch}")
-            if branch not in output:
-                raise Exception(
-                    f"commit {self.release_commit} must belong to {branch} for "
-                    f"{self.release_type} release"
+            self.run(f"git fetch {self.repo} {branch}:{branch}")
+        elif self.release_type not in self.SMALL:
+            raise (
+                ValueError(
+                    f"release_type {self.release_type} neiter in {self.BIG} nor "
+                    f"in {self.SMALL}"
                 )
-            return
-        elif self.release_type in self.SMALL:
-            output = self.run(
-                f"git branch --contains={self.release_commit} {self.release_branch}"
             )
-            if self.release_branch not in output:
-                raise Exception(
-                    f"commit {self.release_commit} must be in "
-                    f"'{self.release_branch}' branch for {self.release_type} release"
-                )
-            return
+
+        output = self.run(f"git branch --contains={self.release_commit} {branch}")
+        if branch not in output:
+            raise Exception(
+                f"commit {self.release_commit} must belong to {branch} "
+                f"for {self.release_type} release"
+            )
 
     def log_rollback(self):
         if self._rollback_stack:
